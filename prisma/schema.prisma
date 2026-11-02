@@ -1,0 +1,80 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  name         String
+  role         String   // "ADMIN", "TEACHER", "STUDENT"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Teacher specific
+  teacherStatus   String?       @default("PENDING") // "PENDING", "APPROVED", "REVOKED"
+  dailyAwardLimit Int?          @default(50)
+  taughtClasses   Classroom[]   @relation("TeacherClasses")
+  givenAwards     PointLedger[] @relation("AwardedByTeacher")
+
+  // Student specific
+  classroomId     String?
+  classroom       Classroom?    @relation("ClassroomStudents", fields: [classroomId], references: [id])
+  ledgerEntries   PointLedger[] @relation("StudentLedger")
+  redemptions     Redemption[]  @relation("StudentRedemptions")
+}
+
+model Classroom {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  teacherId String?
+  teacher   User?    @relation("TeacherClasses", fields: [teacherId], references: [id])
+  students  User[]   @relation("ClassroomStudents")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Reward {
+  id          String        @id @default(cuid())
+  name        String
+  emoji       String
+  pointCost   Int
+  stock       Int
+  active      Boolean       @default(true)
+  redemptions Redemption[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Redemption {
+  id         String       @id @default(cuid())
+  studentId  String
+  student    User         @relation("StudentRedemptions", fields: [studentId], references: [id])
+  rewardId   String
+  reward     Reward       @relation(fields: [rewardId], references: [id])
+  pointCost  Int
+  status     String       @default("REQUESTED") // "REQUESTED", "READY", "COLLECTED", "CANCELLED"
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  ledgerItem PointLedger?
+}
+
+model PointLedger {
+  id           String      @id @default(cuid())
+  studentId    String
+  student      User        @relation("StudentLedger", fields: [studentId], references: [id])
+  amount       Int         // Positive for award/refund, negative for redemption
+  type         String      // "AWARD", "REDEMPTION", "REFUND"
+  category     String?     // "PARTICIPATION", "HOMEWORK", "KINDNESS", "IMPROVEMENT"
+  note         String?
+  awardedById  String?
+  awardedBy    User?       @relation("AwardedByTeacher", fields: [awardedById], references: [id])
+  redemptionId String?     @unique
+  redemption   Redemption? @relation(fields: [redemptionId], references: [id])
+  createdAt    DateTime    @default(now())
+}
