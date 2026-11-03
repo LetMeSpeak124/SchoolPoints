@@ -12,21 +12,38 @@ model User {
   username     String   @unique
   passwordHash String
   name         String
-  role         String   // "ADMIN", "TEACHER", "STUDENT"
+  role         String // "ADMIN", "TEACHER", "STUDENT"
+  status       String   @default("ACTIVE") // "ACTIVE", "DISABLED"
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   // Teacher specific
-  teacherStatus   String?       @default("PENDING") // "PENDING", "APPROVED", "REVOKED"
-  dailyAwardLimit Int?          @default(50)
-  taughtClasses   Classroom[]   @relation("TeacherClasses")
-  givenAwards     PointLedger[] @relation("AwardedByTeacher")
+  teacherStatus    String?       @default("PENDING") // "PENDING", "APPROVED", "REVOKED"
+  dailyAwardLimit  Int?          @default(50)
+  approvedById     String?
+  approvedBy       User?         @relation("TeacherApproval", fields: [approvedById], references: [id])
+  approvedTeachers User[]        @relation("TeacherApproval")
+  approvedAt       DateTime?
+  approvalReason   String?
+  taughtClasses    Classroom[]   @relation("TeacherClasses")
+  givenAwards      PointLedger[] @relation("AwardedByTeacher")
+  monthlyAllocations MonthlyAllocation[] @relation("TeacherMonthlyAllocations")
+  createdPolicies  PointPolicy[] @relation("PolicyCreatedBy")
+  createdActivities Activity[]   @relation("ActivityCreatedBy")
+  studentDisputes  Dispute[]     @relation("StudentDisputes")
+  resolvedDisputes Dispute[]     @relation("ResolvedDisputes")
 
   // Student specific
-  classroomId     String?
-  classroom       Classroom?    @relation("ClassroomStudents", fields: [classroomId], references: [id])
-  ledgerEntries   PointLedger[] @relation("StudentLedger")
-  redemptions     Redemption[]  @relation("StudentRedemptions")
+  classroomId          String?
+  classroom            Classroom?    @relation("ClassroomStudents", fields: [classroomId], references: [id])
+  ledgerEntries        PointLedger[] @relation("StudentLedger")
+  redemptions          Redemption[]  @relation("StudentRedemptions")
+  collectedRedemptions Redemption[]  @relation("CollectedByStaff")
+  auditLogs            AuditLog[]    @relation("AuditActor")
+
+  @@index([role])
+  @@index([classroomId])
+  @@index([teacherStatus])
 }
 
 model Classroom {
@@ -37,44 +54,205 @@ model Classroom {
   students  User[]   @relation("ClassroomStudents")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([teacherId])
 }
 
 model Reward {
-  id          String        @id @default(cuid())
+  id          String       @id @default(cuid())
   name        String
   emoji       String
   pointCost   Int
   stock       Int
-  active      Boolean       @default(true)
+  active      Boolean      @default(true)
   redemptions Redemption[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([active])
 }
 
 model Redemption {
-  id         String       @id @default(cuid())
-  studentId  String
-  student    User         @relation("StudentRedemptions", fields: [studentId], references: [id])
-  rewardId   String
-  reward     Reward       @relation(fields: [rewardId], references: [id])
-  pointCost  Int
-  status     String       @default("REQUESTED") // "REQUESTED", "READY", "COLLECTED", "CANCELLED"
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  ledgerItem PointLedger?
+  id            String        @id @default(cuid())
+  studentId     String
+  student       User          @relation("StudentRedemptions", fields: [studentId], references: [id])
+  rewardId      String
+  reward        Reward        @relation(fields: [rewardId], references: [id])
+  pointCost     Int
+  status        String        @default("REQUESTED") // "REQUESTED", "READY", "COLLECTED", "CANCELLED", "EXPIRED"
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  expiresAt     DateTime?
+  readyAt       DateTime?
+  collectedById String?
+  collectedBy   User?         @relation("CollectedByStaff", fields: [collectedById], references: [id])
+  collectedAt   DateTime?
+  cancelledAt   DateTime?
+  policyVersionId String?
+  policy        PointPolicy? @relation(fields: [policyVersionId], references: [id])
+  activityId    String?
+  activity      Activity?    @relation(fields: [activityId], references: [id])
+  ledgerEntries PointLedger[]
+
+  @@index([studentId])
+  @@index([rewardId])
+  @@index([status])
+  @@index([expiresAt])
 }
 
 model PointLedger {
   id           String      @id @default(cuid())
   studentId    String
   student      User        @relation("StudentLedger", fields: [studentId], references: [id])
-  amount       Int         // Positive for award/refund, negative for redemption
-  type         String      // "AWARD", "REDEMPTION", "REFUND"
-  category     String?     // "PARTICIPATION", "HOMEWORK", "KINDNESS", "IMPROVEMENT"
+  amount       Int // Positive for award/refund, negative for redemption
+  type         String // "AWARD", "REDEMPTION", "REFUND"
+  category     String? // "PARTICIPATION", "HOMEWORK", "KINDNESS", "IMPROVEMENT"
   note         String?
   awardedById  String?
   awardedBy    User?       @relation("AwardedByTeacher", fields: [awardedById], references: [id])
-  redemptionId String?     @unique
+  // Multiple ledger rows can reference one redemption: the original debit and
+  // at most one refund (enforced by the redemption state machine).
+  redemptionId String?
   redemption   Redemption? @relation(fields: [redemptionId], references: [id])
+  policyVersionId String?
+  policy        PointPolicy? @relation(fields: [policyVersionId], references: [id])
+  activityId    String?
+  activity      Activity?    @relation(fields: [activityId], references: [id])
   createdAt    DateTime    @default(now())
+
+  @@index([studentId])
+  @@index([awardedById])
+  @@index([type])
+  @@index([createdAt])
+  @@index([redemptionId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+model PointPolicy {
+  id                    String        @id @default(cuid())
+  version               Int           @unique
+  name                  String
+  maxAwardPoints        Int
+  studentDailyCap       Int
+  collectionWindowHours Int
+  effectiveAt           DateTime      @default(now())
+  isActive              Boolean       @default(false)
+  createdById           String?
+  createdBy             User?         @relation("PolicyCreatedBy", fields: [createdById], references: [id])
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  ledgerEntries         PointLedger[]
+  redemptions           Redemption[]
+
+  @@index([isActive, effectiveAt])
+  @@index([createdById])
+}
+
+model MonthlyAllocation {
+  id              String   @id @default(cuid())
+  teacherId       String
+  teacher         User     @relation("TeacherMonthlyAllocations", fields: [teacherId], references: [id])
+  period          String
+  allocatedPoints Int
+  usedPoints      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([teacherId, period])
+  @@index([teacherId, period])
+}
+
+model Activity {
+  id            String        @id @default(cuid())
+  title         String
+  description   String?
+  category      String?
+  createdById   String?
+  createdBy     User?         @relation("ActivityCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  ledgerEntries PointLedger[]
+  redemptions   Redemption[]
+  disputes      Dispute[]
+
+  @@index([createdById])
+}
+
+model Dispute {
+  id           String    @id @default(cuid())
+  studentId    String
+  student      User      @relation("StudentDisputes", fields: [studentId], references: [id])
+  targetType   String
+  targetId     String
+  reason       String
+  status       String    @default("OPEN")
+  resolution   String?
+  resolvedById String?
+  resolvedBy   User?     @relation("ResolvedDisputes", fields: [resolvedById], references: [id])
+  resolvedAt   DateTime?
+  activityId   String?
+  activity     Activity? @relation(fields: [activityId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([studentId])
+  @@index([targetType, targetId])
+  @@index([status])
+  @@index([resolvedById])
+}
+
+model IdempotencyKey {
+  id          String    @id @default(cuid())
+  scope       String
+  key         String
+  actorId     String?
+  requestHash String?
+  status      String    @default("PENDING")
+  response    String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  expiresAt   DateTime?
+
+  @@unique([scope, key, actorId])
+  @@index([expiresAt])
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  payload     String
+  status      String    @default("PENDING")
+  runAt       DateTime  @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  lastError   String?
+  lockedAt    DateTime?
+  lockedBy    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+}
+
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int       @default(0)
+  expiresAt   DateTime?
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
 }

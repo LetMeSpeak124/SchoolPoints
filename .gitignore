@@ -4,3 +4,4 @@ node_modules/
 *.tsbuildinfo
 prisma/*.db
 prisma/*.db-journal
+backups/

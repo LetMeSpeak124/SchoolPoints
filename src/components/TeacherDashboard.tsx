@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { awardPointsAction } from '@/app/actions/teacher';
-import { AWARD_CATEGORIES, AwardCategory } from '@/lib/types';
+import { AWARD_CATEGORIES, AwardCategory, MAX_AWARD_POINTS, STUDENT_DAILY_CAP } from '@/lib/types';
 import {
   Award,
   AlertTriangle,
@@ -73,7 +73,11 @@ export function TeacherDashboard({
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
 
   const remainingDailyLimit = Math.max(0, teacher.dailyAwardLimit - pointsAwardedToday);
-  const dailyPercent = Math.min(100, Math.round((pointsAwardedToday / teacher.dailyAwardLimit) * 100));
+  const maxAwardForThisClick = Math.max(0, Math.min(remainingDailyLimit, MAX_AWARD_POINTS));
+  const dailyPercent =
+    teacher.dailyAwardLimit > 0
+      ? Math.min(100, Math.round((pointsAwardedToday / teacher.dailyAwardLimit) * 100))
+      : 0;
 
   const handleCategorySelect = (cat: (typeof AWARD_CATEGORIES)[0]) => {
     setSelectedCategory(cat.value);
@@ -83,6 +87,20 @@ export function TeacherDashboard({
   const handleAwardSubmit = () => {
     if (!selectedStudentId) {
       setFeedback({ message: 'Please select a student first (Step 1)', type: 'error' });
+      return;
+    }
+    if (maxAwardForThisClick <= 0) {
+      setFeedback({
+        message: 'Your remaining daily award allowance is exhausted. Ask an administrator to adjust it.',
+        type: 'error',
+      });
+      return;
+    }
+    if (customPoints > maxAwardForThisClick) {
+      setFeedback({
+        message: `A single award cannot exceed ${MAX_AWARD_POINTS} points or your remaining allowance of ${remainingDailyLimit}.`,
+        type: 'error',
+      });
       return;
     }
     setFeedback(null);
@@ -363,12 +381,20 @@ export function TeacherDashboard({
                   <input
                     type="number"
                     min="1"
-                    max={remainingDailyLimit || 100}
+                    max={Math.max(1, maxAwardForThisClick)}
                     value={customPoints}
-                    onChange={(e) => setCustomPoints(Math.max(1, parseInt(e.target.value) || 1))}
-                    disabled={!isApproved || isSubmitting}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10) || 1;
+                      setCustomPoints(
+                        Math.min(Math.max(1, parsed), Math.max(1, maxAwardForThisClick))
+                      );
+                    }}
+                    disabled={!isApproved || isSubmitting || maxAwardForThisClick <= 0}
                     className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-bold"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Max {MAX_AWARD_POINTS} per award; student cap {STUDENT_DAILY_CAP}/day.
+                  </p>
                 </div>
               </div>
 
@@ -394,9 +420,14 @@ export function TeacherDashboard({
                 <button
                   type="button"
                   onClick={handleAwardSubmit}
-                  disabled={!isApproved || !selectedStudentId || isSubmitting}
+                  disabled={
+                    !isApproved || !selectedStudentId || isSubmitting || maxAwardForThisClick <= 0
+                  }
                   className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm ${
-                    isApproved && selectedStudentId && !isSubmitting
+                    isApproved &&
+                    selectedStudentId &&
+                    !isSubmitting &&
+                    maxAwardForThisClick > 0
                       ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
@@ -404,7 +435,9 @@ export function TeacherDashboard({
                   <Send className="w-3.5 h-3.5" />
                   {isSubmitting
                     ? 'Awarding...'
-                    : `Award +${customPoints} Points (Click 3)`}
+                    : maxAwardForThisClick <= 0
+                      ? 'Daily allowance exhausted'
+                      : `Award +${customPoints} Points (Click 3)`}
                 </button>
               </div>
             </div>

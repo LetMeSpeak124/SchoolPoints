@@ -3,16 +3,49 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireRole } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
 import { updateRedemptionStatus } from '@/lib/services/points';
-import { RedemptionStatus } from '@/lib/types';
+import { RedemptionStatus, UserStatus } from '@/lib/types';
 
-export async function updateTeacherStatusAction(teacherId: string, status: 'APPROVED' | 'REVOKED' | 'PENDING') {
+export async function updateTeacherStatusAction(
+  teacherId: string,
+  status: 'APPROVED' | 'REVOKED' | 'PENDING'
+) {
   try {
-    await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN']);
 
-    await prisma.user.update({
-      where: { id: teacherId, role: 'TEACHER' },
-      data: { teacherStatus: status },
+    if (!['APPROVED', 'REVOKED', 'PENDING'].includes(status)) {
+      return { error: 'Invalid teacher status' };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const teacher = await tx.user.findUnique({ where: { id: teacherId } });
+      if (!teacher || teacher.role !== 'TEACHER') {
+        throw new Error('TEACHER_NOT_FOUND: Invalid teacher');
+      }
+
+      await tx.user.update({
+        where: { id: teacherId },
+        data: {
+          teacherStatus: status,
+          approvedById: status === 'PENDING' ? null : session.userId,
+          approvedAt: status === 'PENDING' ? null : new Date(),
+          approvalReason:
+            status === 'REVOKED'
+              ? 'Revoked by administrator'
+              : status === 'PENDING'
+                ? 'Reset to pending by administrator'
+                : null,
+        },
+      });
+
+      await logAudit(tx, {
+        actorId: session.userId,
+        action: 'TEACHER_STATUS_CHANGED',
+        entityType: 'User',
+        entityId: teacherId,
+        details: { previousStatus: teacher.teacherStatus, newStatus: status },
+      });
     });
 
     revalidatePath('/dashboard');
@@ -24,15 +57,30 @@ export async function updateTeacherStatusAction(teacherId: string, status: 'APPR
 
 export async function updateTeacherDailyLimitAction(teacherId: string, dailyAwardLimit: number) {
   try {
-    await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN']);
 
-    if (isNaN(dailyAwardLimit) || dailyAwardLimit < 0) {
-      return { error: 'Daily limit must be a non-negative number' };
+    if (!Number.isInteger(dailyAwardLimit) || dailyAwardLimit < 0) {
+      return { error: 'Daily limit must be a non-negative integer' };
     }
 
-    await prisma.user.update({
-      where: { id: teacherId, role: 'TEACHER' },
-      data: { dailyAwardLimit },
+    await prisma.$transaction(async (tx) => {
+      const teacher = await tx.user.findUnique({ where: { id: teacherId } });
+      if (!teacher || teacher.role !== 'TEACHER') {
+        throw new Error('TEACHER_NOT_FOUND: Invalid teacher');
+      }
+
+      await tx.user.update({
+        where: { id: teacherId },
+        data: { dailyAwardLimit },
+      });
+
+      await logAudit(tx, {
+        actorId: session.userId,
+        action: 'TEACHER_DAILY_LIMIT_CHANGED',
+        entityType: 'User',
+        entityId: teacherId,
+        details: { previousLimit: teacher.dailyAwardLimit, newLimit: dailyAwardLimit },
+      });
     });
 
     revalidatePath('/dashboard');
@@ -42,27 +90,85 @@ export async function updateTeacherDailyLimitAction(teacherId: string, dailyAwar
   }
 }
 
+export async function updateUserStatusAction(userId: string, status: UserStatus) {
+  try {
+    const session = await requireRole(['ADMIN']);
+
+    if (status !== 'ACTIVE' && status !== 'DISABLED') {
+      return { error: 'Invalid account status' };
+    }
+
+    if (userId === session.userId) {
+      return { error: 'You cannot change your own account status' };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        throw new Error('USER_NOT_FOUND: Invalid account');
+      }
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { status },
+      });
+
+      await logAudit(tx, {
+        actorId: session.userId,
+        action: 'ACCOUNT_STATUS_CHANGED',
+        entityType: 'User',
+        entityId: userId,
+        details: { previousStatus: user.status, newStatus: status },
+      });
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to update account status' };
+  }
+}
+
 export async function createRewardAction(formData: FormData) {
   try {
-    await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN']);
 
     const name = (formData.get('name') as string)?.trim();
     const emoji = (formData.get('emoji') as string)?.trim() || '🎁';
     const pointCost = parseInt(formData.get('pointCost') as string, 10);
     const stock = parseInt(formData.get('stock') as string, 10);
 
-    if (!name || isNaN(pointCost) || pointCost <= 0 || isNaN(stock) || stock < 0) {
-      return { error: 'Please provide valid reward details (positive points and non-negative stock).' };
+    if (!name || name.length > 150) {
+      return { error: 'Please provide a valid reward name (1-150 characters).' };
+    }
+    if (emoji.length > 16) {
+      return { error: 'Emoji icon is too long.' };
+    }
+    if (!Number.isInteger(pointCost) || pointCost <= 0) {
+      return { error: 'Point cost must be a positive integer.' };
+    }
+    if (!Number.isInteger(stock) || stock < 0) {
+      return { error: 'Stock must be a non-negative integer.' };
     }
 
-    await prisma.reward.create({
-      data: {
-        name,
-        emoji,
-        pointCost,
-        stock,
-        active: true,
-      },
+    await prisma.$transaction(async (tx) => {
+      const reward = await tx.reward.create({
+        data: {
+          name,
+          emoji,
+          pointCost,
+          stock,
+          active: true,
+        },
+      });
+
+      await logAudit(tx, {
+        actorId: session.userId,
+        action: 'REWARD_CREATED',
+        entityType: 'Reward',
+        entityId: reward.id,
+        details: { name, pointCost, stock },
+      });
     });
 
     revalidatePath('/dashboard');
@@ -74,15 +180,30 @@ export async function createRewardAction(formData: FormData) {
 
 export async function updateRewardStockAction(rewardId: string, stock: number) {
   try {
-    await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN']);
 
-    if (isNaN(stock) || stock < 0) {
-      return { error: 'Stock cannot be negative' };
+    if (!Number.isInteger(stock) || stock < 0) {
+      return { error: 'Stock must be a non-negative integer' };
     }
 
-    await prisma.reward.update({
-      where: { id: rewardId },
-      data: { stock },
+    await prisma.$transaction(async (tx) => {
+      const reward = await tx.reward.findUnique({ where: { id: rewardId } });
+      if (!reward) {
+        throw new Error('REWARD_NOT_FOUND: Invalid reward');
+      }
+
+      await tx.reward.update({
+        where: { id: rewardId },
+        data: { stock },
+      });
+
+      await logAudit(tx, {
+        actorId: session.userId,
+        action: 'REWARD_STOCK_CHANGED',
+        entityType: 'Reward',
+        entityId: rewardId,
+        details: { previousStock: reward.stock, newStock: stock },
+      });
     });
 
     revalidatePath('/dashboard');
@@ -92,11 +213,52 @@ export async function updateRewardStockAction(rewardId: string, stock: number) {
   }
 }
 
-export async function updateRedemptionStatusAction(redemptionId: string, status: RedemptionStatus) {
+export async function setRewardActiveAction(rewardId: string, active: boolean) {
   try {
-    await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN']);
 
-    await updateRedemptionStatus(redemptionId, status);
+    await prisma.$transaction(async (tx) => {
+      const reward = await tx.reward.findUnique({ where: { id: rewardId } });
+      if (!reward) {
+        throw new Error('REWARD_NOT_FOUND: Invalid reward');
+      }
+
+      await tx.reward.update({
+        where: { id: rewardId },
+        data: { active },
+      });
+
+      await logAudit(tx, {
+        actorId: session.userId,
+        action: 'REWARD_ACTIVE_CHANGED',
+        entityType: 'Reward',
+        entityId: rewardId,
+        details: { previousActive: reward.active, newActive: active },
+      });
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (err: any) {
+    return { error: err.message || 'Failed to update reward availability' };
+  }
+}
+
+export async function updateRedemptionStatusAction(
+  redemptionId: string,
+  status: RedemptionStatus
+) {
+  try {
+    const session = await requireRole(['ADMIN']);
+
+    if (status !== 'READY' && status !== 'COLLECTED' && status !== 'CANCELLED') {
+      return { error: 'Invalid redemption action' };
+    }
+
+    await updateRedemptionStatus(redemptionId, status, {
+      actorId: session.userId,
+      reason: `Administrator action: ${status}`,
+    });
 
     revalidatePath('/dashboard');
     return { success: true };

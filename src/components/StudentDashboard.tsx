@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { redeemRewardAction } from '@/app/actions/student';
+import { redeemRewardAction, cancelMyRedemptionAction } from '@/app/actions/student';
 import { Award, CheckCircle2, Clock, Gift, History, Sparkles, AlertCircle, ShoppingBag } from 'lucide-react';
 
 interface StudentDashboardProps {
@@ -28,6 +28,7 @@ interface StudentDashboardProps {
     pointCost: number;
     status: string;
     createdAt: string | Date;
+    expiresAt?: string | Date | null;
     reward: {
       name: string;
       emoji: string;
@@ -53,7 +54,9 @@ export function StudentDashboard({
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Find next reward target: lowest cost reward that student cannot yet afford
-  const sortedRewards = [...rewards].sort((a, b) => a.pointCost - b.pointCost);
+  const sortedRewards = [...rewards]
+    .filter((reward) => reward.stock > 0)
+    .sort((a, b) => a.pointCost - b.pointCost);
   const nextTarget = sortedRewards.find((r) => r.pointCost > balance);
 
   let progressPercent = 100;
@@ -71,6 +74,21 @@ export function StudentDashboard({
         setFeedback({ message: res.error, type: 'error' });
       } else {
         setFeedback({ message: `Successfully redeemed ${rewardName}! Check your redemptions below.`, type: 'success' });
+      }
+    });
+  };
+
+  const handleCancelRedemption = (redemptionId: string, rewardName: string) => {
+    setFeedback(null);
+    startTransition(async () => {
+      const res = await cancelMyRedemptionAction(redemptionId);
+      if (res?.error) {
+        setFeedback({ message: res.error, type: 'error' });
+      } else {
+        setFeedback({
+          message: `Cancelled ${rewardName}. Your points and the reserved stock were restored.`,
+          type: 'success',
+        });
       }
     });
   };
@@ -99,6 +117,12 @@ export function StudentDashboard({
         return (
           <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
             <AlertCircle className="w-3 h-3" /> Cancelled & Refunded
+          </span>
+        );
+      case 'EXPIRED':
+        return (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 border border-slate-300">
+            <Clock className="w-3 h-3" /> Expired & Refunded
           </span>
         );
       default:
@@ -299,7 +323,7 @@ export function StudentDashboard({
               {redemptions.map((redemption) => (
                 <div
                   key={redemption.id}
-                  className="flex items-center justify-between p-3.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition"
+                  className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{redemption.reward.emoji}</span>
@@ -316,9 +340,35 @@ export function StudentDashboard({
                         })}{' '}
                         • -{redemption.pointCost} pts
                       </p>
+                      {redemption.expiresAt &&
+                        (redemption.status === 'REQUESTED' || redemption.status === 'READY') && (
+                          <p className="text-[10px] text-amber-700 mt-0.5">
+                            Collect by{' '}
+                            {new Date(redemption.expiresAt).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        )}
                     </div>
                   </div>
-                  <div>{getStatusBadge(redemption.status)}</div>
+                  <div className="flex flex-col items-end gap-1.5">
+                    {getStatusBadge(redemption.status)}
+                    {(redemption.status === 'REQUESTED' || redemption.status === 'READY') && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCancelRedemption(redemption.id, redemption.reward.name)
+                        }
+                        disabled={isPending}
+                        className="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-0.5 rounded transition"
+                      >
+                        Cancel &amp; refund
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

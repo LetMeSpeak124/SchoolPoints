@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getStudentData } from '@/lib/services/points';
+import { getStudentData, expireOverdueRedemptions, getManilaDayRange } from '@/lib/services/points';
 import { Navbar } from '@/components/Navbar';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { TeacherDashboard } from '@/components/TeacherDashboard';
@@ -13,7 +13,8 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  const isDemoMode = process.env.DEMO_MODE === 'true';
+  // Lazily expire overdue requests even if no external scheduler is configured.
+  await expireOverdueRedemptions();
 
   if (session.role === 'ADMIN') {
     // 1. Fetch Teachers
@@ -49,7 +50,26 @@ export default async function DashboardPage() {
       orderBy: { createdAt: 'desc' },
     });
 
-    // 4. Fetch Stats
+    // 4. Fetch Students
+    const students = await prisma.user.findMany({
+      where: { role: 'STUDENT' },
+      include: {
+        classroom: { select: { id: true, name: true } },
+        ledgerEntries: { select: { amount: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const formattedStudents = students.map((student) => ({
+      id: student.id,
+      name: student.name,
+      username: student.username,
+      status: student.status,
+      classroom: student.classroom,
+      balance: student.ledgerEntries.reduce((total, entry) => total + entry.amount, 0),
+    }));
+
+    // 5. Fetch Stats
     const totalPointsAwardedSum = await prisma.pointLedger.aggregate({
       _sum: { amount: true },
       where: { type: 'AWARD' },
@@ -66,10 +86,11 @@ export default async function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navbar user={session} demoMode={isDemoMode} />
+        <Navbar user={session} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <AdminDashboard
             teachers={teachers as any}
+            students={formattedStudents}
             rewards={rewards}
             redemptions={redemptions}
             stats={stats}
@@ -116,16 +137,15 @@ export default async function DashboardPage() {
       })),
     }));
 
-    // Calculate points awarded today
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Calculate points awarded today using the school-local Asia/Manila day.
+    const { start: todayStart, end: todayEnd } = getManilaDayRange();
 
     const awardsToday = await prisma.pointLedger.aggregate({
       _sum: { amount: true },
       where: {
         awardedById: teacher.id,
         type: 'AWARD',
-        createdAt: { gte: todayStart },
+        createdAt: { gte: todayStart, lt: todayEnd },
       },
     });
 
@@ -146,7 +166,7 @@ export default async function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navbar user={session} demoMode={isDemoMode} />
+        <Navbar user={session} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <TeacherDashboard
             teacher={{
@@ -174,7 +194,7 @@ export default async function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navbar user={session} demoMode={isDemoMode} />
+        <Navbar user={session} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <StudentDashboard
             student={data.student}

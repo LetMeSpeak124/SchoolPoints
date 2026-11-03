@@ -1,9 +1,9 @@
 'use client';
 
 import { useTransition } from 'react';
-import { logoutAction, demoLoginAction } from '@/app/actions/auth';
+import { logoutAction } from '@/app/actions/auth';
 import { Role } from '@/lib/types';
-import { LogOut, Sparkles, UserCheck } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
 interface NavbarProps {
   user: {
@@ -12,10 +12,9 @@ interface NavbarProps {
     role: Role;
     name: string;
   };
-  demoMode?: boolean;
 }
 
-export function Navbar({ user, demoMode = false }: NavbarProps) {
+export function Navbar({ user }: NavbarProps) {
   const [isPending, startTransition] = useTransition();
 
   const handleLogout = () => {
@@ -24,11 +23,6 @@ export function Navbar({ user, demoMode = false }: NavbarProps) {
     });
   };
 
-  const handleDemoSwitch = (target: 'admin' | 'teacher_approved' | 'teacher_pending' | 'student') => {
-    startTransition(async () => {
-      await demoLoginAction(target);
-    });
-  };
 
   const roleColors: Record<Role, string> = {
     ADMIN: 'bg-purple-100 text-purple-800 border-purple-200',
@@ -67,58 +61,6 @@ export function Navbar({ user, demoMode = false }: NavbarProps) {
             </span>
           </div>
 
-          {/* Quick Demo Switcher if Demo Mode is on */}
-          {demoMode && (
-            <div className="hidden lg:flex items-center gap-1.5 pl-3 border-l border-slate-200">
-              <span className="text-xs text-slate-400 flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5" /> Switch:
-              </span>
-              <button
-                disabled={isPending}
-                onClick={() => handleDemoSwitch('admin')}
-                className={`text-xs px-2 py-1 rounded border transition ${
-                  user.role === 'ADMIN'
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                }`}
-              >
-                Admin
-              </button>
-              <button
-                disabled={isPending}
-                onClick={() => handleDemoSwitch('teacher_approved')}
-                className={`text-xs px-2 py-1 rounded border transition ${
-                  user.role === 'TEACHER' && user.username === 'teacher_sarah'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                }`}
-              >
-                Teacher (Approved)
-              </button>
-              <button
-                disabled={isPending}
-                onClick={() => handleDemoSwitch('teacher_pending')}
-                className={`text-xs px-2 py-1 rounded border transition ${
-                  user.role === 'TEACHER' && user.username === 'teacher_john'
-                    ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                }`}
-              >
-                Teacher (Pending)
-              </button>
-              <button
-                disabled={isPending}
-                onClick={() => handleDemoSwitch('student')}
-                className={`text-xs px-2 py-1 rounded border transition ${
-                  user.role === 'STUDENT'
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                }`}
-              >
-                Student
-              </button>
-            </div>
-          )}
 
           {/* Logout button */}
           <button

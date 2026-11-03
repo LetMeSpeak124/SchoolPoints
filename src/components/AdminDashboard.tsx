@@ -7,8 +7,10 @@ import {
   createRewardAction,
   updateRewardStockAction,
   updateRedemptionStatusAction,
+  updateUserStatusAction,
+  setRewardActiveAction,
 } from '@/app/actions/admin';
-import { RedemptionStatus } from '@/lib/types';
+import { RedemptionStatus, UserStatus } from '@/lib/types';
 import {
   Users,
   Gift,
@@ -22,6 +24,10 @@ import {
   Award,
   AlertCircle,
   RefreshCw,
+  UserCheck,
+  UserX,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -33,6 +39,15 @@ interface AdminDashboardProps {
     dailyAwardLimit: number;
     taughtClasses: Array<{ name: string; _count: { students: number } }>;
     _count: { givenAwards: number };
+    status: UserStatus;
+  }>;
+  students: Array<{
+    id: string;
+    name: string;
+    username: string;
+    status: string;
+    classroom: { id: string; name: string } | null;
+    balance: number;
   }>;
   rewards: Array<{
     id: string;
@@ -48,6 +63,10 @@ interface AdminDashboardProps {
     pointCost: number;
     status: string;
     createdAt: string | Date;
+    expiresAt?: string | Date | null;
+    readyAt?: string | Date | null;
+    collectedAt?: string | Date | null;
+    collectedBy?: { name: string } | null;
     student: {
       id: string;
       name: string;
@@ -69,11 +88,12 @@ interface AdminDashboardProps {
 
 export function AdminDashboard({
   teachers,
+  students,
   rewards,
   redemptions,
   stats,
 }: AdminDashboardProps) {
-  const [tab, setTab] = useState<'teachers' | 'rewards' | 'redemptions' | 'overview'>('teachers');
+  const [tab, setTab] = useState<'teachers' | 'students' | 'rewards' | 'redemptions'>('teachers');
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -101,6 +121,36 @@ export function AdminDashboard({
         setFeedback({ message: res.error, type: 'error' });
       } else {
         setFeedback({ message: `Teacher status updated to ${status}`, type: 'success' });
+      }
+    });
+  };
+
+  const handleAccountStatus = (userId: string, status: UserStatus) => {
+    setFeedback(null);
+    startTransition(async () => {
+      const res = await updateUserStatusAction(userId, status);
+      if (res?.error) {
+        setFeedback({ message: res.error, type: 'error' });
+      } else {
+        setFeedback({
+          message: `Account ${status === 'ACTIVE' ? 'enabled' : 'disabled'} successfully`,
+          type: 'success',
+        });
+      }
+    });
+  };
+
+  const handleRewardActive = (rewardId: string, active: boolean) => {
+    setFeedback(null);
+    startTransition(async () => {
+      const res = await setRewardActiveAction(rewardId, active);
+      if (res?.error) {
+        setFeedback({ message: res.error, type: 'error' });
+      } else {
+        setFeedback({
+          message: active ? 'Reward returned to the catalog' : 'Reward removed from the catalog',
+          type: 'success',
+        });
       }
     });
   };
@@ -238,6 +288,17 @@ export function AdminDashboard({
           Teachers ({teachers.length})
         </button>
         <button
+          onClick={() => setTab('students')}
+          className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            tab === 'students'
+              ? 'border-purple-600 text-purple-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          Students ({students.length})
+        </button>
+        <button
           onClick={() => setTab('rewards')}
           className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
             tab === 'rewards'
@@ -306,6 +367,13 @@ export function AdminDashboard({
                       >
                         {t.teacherStatus}
                       </span>
+                      {t.status === 'DISABLED' && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-600">
+                            ACCOUNT DISABLED
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">
@@ -349,6 +417,19 @@ export function AdminDashboard({
                           Revoke
                         </button>
                       )}
+                      <button
+                        onClick={() =>
+                          handleAccountStatus(t.id, t.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE')
+                        }
+                        disabled={isPending}
+                        className={`px-3 py-1.5 rounded-lg border font-bold text-xs transition ${
+                          t.status === 'ACTIVE'
+                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                        }`}
+                      >
+                        {t.status === 'ACTIVE' ? 'Disable' : 'Enable'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -358,7 +439,83 @@ export function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 2: REWARDS CATALOG */}
+      {/* TAB 2: STUDENTS */}
+      {tab === 'students' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Student Accounts</h3>
+            <p className="text-xs text-slate-500">
+              Students are created by the school. Disabled accounts cannot sign in or redeem rewards.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 uppercase font-bold tracking-wider">
+                  <th className="py-3 px-4">Student</th>
+                  <th className="py-3 px-4">Class</th>
+                  <th className="py-3 px-4">Balance</th>
+                  <th className="py-3 px-4">Account</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {students.map((student) => (
+                  <tr key={student.id} className="hover:bg-slate-50 transition">
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-slate-900">{student.name}</div>
+                      <div className="text-[11px] text-slate-400">@{student.username}</div>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-600">
+                      {student.classroom?.name || 'No class assigned'}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-purple-700">
+                      {student.balance} pts
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                          student.status === 'ACTIVE'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            : 'bg-slate-200 text-slate-600 border-slate-300'
+                        }`}
+                      >
+                        {student.status === 'ACTIVE' ? (
+                          <UserCheck className="w-3 h-3 mr-1" />
+                        ) : (
+                          <UserX className="w-3 h-3 mr-1" />
+                        )}
+                        {student.status}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        onClick={() =>
+                          handleAccountStatus(
+                            student.id,
+                            student.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+                          )
+                        }
+                        disabled={isPending}
+                        className={`px-3 py-1.5 rounded-lg border font-bold text-xs transition ${
+                          student.status === 'ACTIVE'
+                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                        }`}
+                      >
+                        {student.status === 'ACTIVE' ? 'Disable' : 'Enable'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: REWARDS CATALOG */}
       {tab === 'rewards' && (
         <div className="space-y-6">
           {/* Create Reward Card */}
@@ -442,34 +599,58 @@ export function AdminDashboard({
                     </span>
                   </div>
                   <div className="my-2">
-                    <h4 className="font-bold text-slate-900 text-sm">{r.name}</h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-slate-900 text-sm">{r.name}</h4>
+                      {!r.active && (
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                          HIDDEN
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[11px] text-slate-400">
                       {r._count.redemptions} total redeemed
                     </p>
                   </div>
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-500">Stock:</span>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="0"
-                        value={stockEdits[r.id] ?? r.stock}
-                        onChange={(e) =>
-                          setStockEdits({
-                            ...stockEdits,
-                            [r.id]: parseInt(e.target.value) || 0,
-                          })
-                        }
-                        className="w-16 px-2 py-1 border border-slate-200 rounded-lg text-xs font-mono font-bold"
-                      />
-                      <button
-                        onClick={() => handleStockSave(r.id)}
-                        disabled={isPending}
-                        className="text-xs font-bold text-purple-600 hover:bg-purple-50 px-2 py-1 rounded transition"
-                      >
-                        Save
-                      </button>
+                  <div className="pt-2 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-500">Stock:</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          value={stockEdits[r.id] ?? r.stock}
+                          onChange={(e) =>
+                            setStockEdits({
+                              ...stockEdits,
+                              [r.id]: parseInt(e.target.value) || 0,
+                            })
+                          }
+                          className="w-16 px-2 py-1 border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                        />
+                        <button
+                          onClick={() => handleStockSave(r.id)}
+                          disabled={isPending}
+                          className="text-xs font-bold text-purple-600 hover:bg-purple-50 px-2 py-1 rounded transition"
+                        >
+                          Save
+                        </button>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => handleRewardActive(r.id, !r.active)}
+                      disabled={isPending}
+                      className="w-full text-[11px] font-bold px-2 py-1 rounded border transition text-slate-600 bg-slate-50 hover:bg-slate-100 border-slate-200 flex items-center justify-center gap-1.5"
+                    >
+                      {r.active ? (
+                        <>
+                          <EyeOff className="w-3 h-3" /> Remove from catalog
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3 h-3" /> Return to catalog
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -478,7 +659,7 @@ export function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 3: REDEMPTIONS */}
+      {/* TAB 4: REDEMPTIONS */}
       {tab === 'redemptions' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
           <div>
@@ -518,12 +699,31 @@ export function AdminDashboard({
                         {redemption.pointCost} pts
                       </td>
                       <td className="py-3.5 px-4 text-slate-500">
-                        {new Date(redemption.createdAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        <div>
+                          {new Date(redemption.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </div>
+                        {redemption.expiresAt &&
+                          (redemption.status === 'REQUESTED' || redemption.status === 'READY') && (
+                            <div className="text-[10px] text-amber-700 mt-0.5">
+                              Expires{' '}
+                              {new Date(redemption.expiresAt).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </div>
+                          )}
+                        {redemption.collectedBy && redemption.collectedAt && (
+                          <div className="text-[10px] text-emerald-700 mt-0.5">
+                            Collected by {redemption.collectedBy.name}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         <span
@@ -559,7 +759,9 @@ export function AdminDashboard({
                             Mark Collected
                           </button>
                         )}
-                        {redemption.status !== 'COLLECTED' && redemption.status !== 'CANCELLED' && (
+                        {redemption.status !== 'COLLECTED' &&
+                          redemption.status !== 'CANCELLED' &&
+                          redemption.status !== 'EXPIRED' && (
                           <button
                             onClick={() => handleRedemptionStatus(redemption.id, 'CANCELLED')}
                             disabled={isPending}

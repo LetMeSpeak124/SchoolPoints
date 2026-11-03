@@ -8,14 +8,17 @@ import { AwardCategory } from '@/lib/types';
 export async function awardPointsAction(formData: FormData) {
   try {
     const session = await requireRole(['TEACHER']);
-    const studentId = formData.get('studentId') as string;
-    const category = formData.get('category') as AwardCategory;
-    const amountStr = formData.get('amount') as string;
-    const note = (formData.get('note') as string) || '';
+    const studentId = (formData.get('studentId') as string)?.trim();
+    const category = (formData.get('category') as AwardCategory)?.trim() as AwardCategory;
+    const amount = Number(formData.get('amount'));
+    const note = ((formData.get('note') as string) || '').trim();
 
-    const amount = parseInt(amountStr, 10);
-    if (!studentId || !category || isNaN(amount) || amount <= 0) {
-      return { error: 'Invalid input. Please provide student, category, and valid points.' };
+    if (!studentId || !category || !Number.isInteger(amount) || amount <= 0) {
+      return { error: 'Invalid input. Please provide a student, category, and valid whole-number points.' };
+    }
+
+    if (note.length > 500) {
+      return { error: 'The note is too long (maximum 500 characters).' };
     }
 
     await awardPoints({

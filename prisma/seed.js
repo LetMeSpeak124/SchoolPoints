@@ -7,11 +7,19 @@ async function main() {
   console.log('Seeding database...');
 
   // Clear existing data
+  await prisma.auditLog.deleteMany();
   await prisma.pointLedger.deleteMany();
   await prisma.redemption.deleteMany();
   await prisma.reward.deleteMany();
   await prisma.classroom.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.pointPolicy.deleteMany();
+  await prisma.activity.deleteMany();
+  await prisma.monthlyAllocation.deleteMany();
+  await prisma.dispute.deleteMany();
+  await prisma.idempotencyKey.deleteMany();
+  await prisma.job.deleteMany();
+  await prisma.rateLimitBucket.deleteMany();
 
   const passwordHash = await bcrypt.hash('password123', 10);
 
@@ -22,18 +30,33 @@ async function main() {
       passwordHash,
       name: 'Principal Vance',
       role: 'ADMIN',
+      status: 'ACTIVE',
     },
   });
 
-  // 2. Teachers (one approved, one pending)
+  // Default point policy
+  await prisma.pointPolicy.create({
+    data: {
+      version: 1,
+      name: 'Default pilot policy',
+      maxAwardPoints: 10,
+      studentDailyCap: 20,
+      collectionWindowHours: 72,
+      isActive: true,
+      createdById: admin.id,
+    },
+  });
   const approvedTeacher = await prisma.user.create({
     data: {
       username: 'teacher_sarah',
       passwordHash,
       name: 'Ms. Sarah Connor',
       role: 'TEACHER',
+      status: 'ACTIVE',
       teacherStatus: 'APPROVED',
       dailyAwardLimit: 60,
+      approvedById: admin.id,
+      approvedAt: new Date(),
     },
   });
 
@@ -43,6 +66,7 @@ async function main() {
       passwordHash,
       name: 'Mr. John Keating',
       role: 'TEACHER',
+      status: 'ACTIVE',
       teacherStatus: 'PENDING',
       dailyAwardLimit: 50,
     },
@@ -88,6 +112,7 @@ async function main() {
         passwordHash,
         name: s.name,
         role: 'STUDENT',
+        status: 'ACTIVE',
         classroomId: classA.id,
       },
     });
@@ -101,6 +126,7 @@ async function main() {
         passwordHash,
         name: s.name,
         role: 'STUDENT',
+        status: 'ACTIVE',
         classroomId: classB.id,
       },
     });
@@ -146,7 +172,7 @@ async function main() {
   await prisma.pointLedger.create({
     data: {
       studentId: alice.id,
-      amount: 15,
+      amount: 10,
       type: 'AWARD',
       category: 'IMPROVEMENT',
       note: 'Terrific improvement in science lab',
@@ -176,6 +202,8 @@ async function main() {
       pointCost: gelPenReward.pointCost,
       status: 'READY',
       createdAt: new Date(Date.now() - 5 * 3600 * 1000),
+      readyAt: new Date(Date.now() - 4 * 3600 * 1000),
+      expiresAt: new Date(Date.now() + 67 * 3600 * 1000),
     },
   });
 
@@ -214,7 +242,7 @@ async function main() {
   await prisma.pointLedger.create({
     data: {
       studentId: charlie.id,
-      amount: 20,
+      amount: 10,
       type: 'AWARD',
       category: 'HOMEWORK',
       note: 'Perfect reading log',
