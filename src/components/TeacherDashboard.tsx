@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { awardPointsAction } from '@/app/actions/teacher';
+import { allocateMonthlyPointsAction } from '@/app/actions/allocations';
+import { createRewardAction, updateRewardStockAction, setRewardActiveAction } from '@/app/actions/admin';
 import { AWARD_CATEGORIES, AwardCategory, MAX_AWARD_POINTS, STUDENT_DAILY_CAP } from '@/lib/types';
 import {
   Award,
@@ -66,6 +68,18 @@ export function TeacherDashboard({
   const [customPoints, setCustomPoints] = useState<number>(5);
   const [note, setNote] = useState<string>('');
 
+  // Monthly Allocation State
+  const [allocationAmount, setAllocationAmount] = useState<number>(0);
+  const [allocationPeriod, setAllocationPeriod] = useState<string>('');
+  const [allocationFeedback, setAllocationFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Reward Management State
+  const [rewardName, setRewardName] = useState<string>('');
+  const [rewardEmoji, setRewardEmoji] = useState<string>('??');
+  const [rewardCost, setRewardCost] = useState<number>(5);
+  const [rewardStock, setRewardStock] = useState<number>(0);
+  const [rewardFeedback, setRewardFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
   const [isSubmitting, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -123,6 +137,56 @@ export function TeacherDashboard({
         setNote('');
       }
     });
+
+  const handleAllocationSubmit = async () => {
+    if (!allocationPeriod || !/^\d{4}-\d{2}$/.test(allocationPeriod)) {
+      setAllocationFeedback({ message: 'Please enter a valid period (YYYY-MM)', type: 'error' });
+      return;
+    }
+    if (!Number.isInteger(allocationAmount) || allocationAmount < 0) {
+      setAllocationFeedback({ message: 'Please enter a valid point amount', type: 'error' });
+      return;
+    }
+    const formData = new FormData();
+    formData.append('period', allocationPeriod);
+    formData.append('allocatedPoints', allocationAmount.toString());
+    const res = await allocateMonthlyPointsAction(formData);
+    if (res?.error) {
+      setAllocationFeedback({ message: res.error, type: 'error' });
+    } else {
+      setAllocationFeedback({ message: 'Monthly allocation saved successfully!', type: 'success' });
+    }
+  };
+
+  const handleRewardCreate = async () => {
+    if (!rewardName || rewardName.length > 150) {
+      setRewardFeedback({ message: 'Please provide a valid reward name (1-150 characters)', type: 'error' });
+      return;
+    }
+    if (!Number.isInteger(rewardCost) || rewardCost <= 0) {
+      setRewardFeedback({ message: 'Point cost must be a positive integer', type: 'error' });
+      return;
+    }
+    if (!Number.isInteger(rewardStock) || rewardStock < 0) {
+      setRewardFeedback({ message: 'Stock must be a non-negative integer', type: 'error' });
+      return;
+    }
+    const formData = new FormData();
+    formData.append('name', rewardName);
+    formData.append('emoji', rewardEmoji);
+    formData.append('pointCost', rewardCost.toString());
+    formData.append('stock', rewardStock.toString());
+    const res = await createRewardAction(formData);
+    if (res?.error) {
+      setRewardFeedback({ message: res.error, type: 'error' });
+    } else {
+      setRewardFeedback({ message: 'Reward created successfully!', type: 'success' });
+      setRewardName('');
+      setRewardEmoji('??');
+      setRewardCost(5);
+      setRewardStock(0);
+    }
+  };
   };
 
   return (
@@ -496,3 +560,4 @@ export function TeacherDashboard({
     </div>
   );
 }
+

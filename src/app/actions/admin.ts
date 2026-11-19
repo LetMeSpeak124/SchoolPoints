@@ -12,7 +12,7 @@ export async function updateTeacherStatusAction(
   status: 'APPROVED' | 'REVOKED' | 'PENDING'
 ) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     if (!['APPROVED', 'REVOKED', 'PENDING'].includes(status)) {
       return { error: 'Invalid teacher status' };
@@ -57,7 +57,7 @@ export async function updateTeacherStatusAction(
 
 export async function updateTeacherDailyLimitAction(teacherId: string, dailyAwardLimit: number) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     if (!Number.isInteger(dailyAwardLimit) || dailyAwardLimit < 0) {
       return { error: 'Daily limit must be a non-negative integer' };
@@ -92,7 +92,7 @@ export async function updateTeacherDailyLimitAction(teacherId: string, dailyAwar
 
 export async function updateUserStatusAction(userId: string, status: UserStatus) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     if (status !== 'ACTIVE' && status !== 'DISABLED') {
       return { error: 'Invalid account status' };
@@ -131,10 +131,10 @@ export async function updateUserStatusAction(userId: string, status: UserStatus)
 
 export async function createRewardAction(formData: FormData) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     const name = (formData.get('name') as string)?.trim();
-    const emoji = (formData.get('emoji') as string)?.trim() || '🎁';
+    const emoji = (formData.get('emoji') as string)?.trim() || '??';
     const pointCost = parseInt(formData.get('pointCost') as string, 10);
     const stock = parseInt(formData.get('stock') as string, 10);
 
@@ -180,7 +180,7 @@ export async function createRewardAction(formData: FormData) {
 
 export async function updateRewardStockAction(rewardId: string, stock: number) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     if (!Number.isInteger(stock) || stock < 0) {
       return { error: 'Stock must be a non-negative integer' };
@@ -215,7 +215,7 @@ export async function updateRewardStockAction(rewardId: string, stock: number) {
 
 export async function setRewardActiveAction(rewardId: string, active: boolean) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     await prisma.$transaction(async (tx) => {
       const reward = await tx.reward.findUnique({ where: { id: rewardId } });
@@ -249,7 +249,7 @@ export async function updateRedemptionStatusAction(
   status: RedemptionStatus
 ) {
   try {
-    const session = await requireRole(['ADMIN']);
+    const session = await requireRole(['ADMIN', 'TEACHER']);
 
     if (status !== 'READY' && status !== 'COLLECTED' && status !== 'CANCELLED') {
       return { error: 'Invalid redemption action' };
