@@ -9,6 +9,7 @@ import {
   getDbLoginRateLimit,
   recordDbLoginFailure,
 } from '@/lib/rate-limit';
+import { isDemoModeEnabled } from '@/lib/demo';
 import { Role } from '@/lib/types';
 
 // Used when the username does not exist so that invalid usernames and invalid
@@ -69,6 +70,46 @@ export async function loginAction(formData: FormData) {
   }
 
   await clearDbLoginFailures(rateLimitKey);
+
+  await setSessionCookie({
+    userId: user.id,
+    username: user.username,
+    role: user.role as Role,
+    name: user.name,
+  });
+
+  redirect('/dashboard');
+}
+
+export async function demoLoginAction(
+  demoTarget: 'admin' | 'teacher_approved' | 'teacher_pending' | 'student'
+) {
+  if (!isDemoModeEnabled()) {
+    return { error: 'Demo mode is disabled. Sign in with a school account.' };
+  }
+
+  const targetByRole = {
+    admin: 'admin',
+    teacher_approved: 'teacher_sarah',
+    teacher_pending: 'teacher_john',
+    student: 'student_alice',
+  } as const;
+
+  const targetUsername = targetByRole[demoTarget];
+
+  const user = await prisma.user.findUnique({
+    where: { username: targetUsername },
+  });
+
+  if (!user) {
+    return {
+      error: `Demo user ${targetUsername} not found. Run the seed script first.`,
+    };
+  }
+
+  if (user.status !== 'ACTIVE') {
+    return { error: `Demo user ${targetUsername} is disabled.` };
+  }
 
   await setSessionCookie({
     userId: user.id,

@@ -1,10 +1,14 @@
 ﻿'use client';
 
 import { useState, useTransition } from 'react';
-import { loginAction } from '@/app/actions/auth';
-import { User, Lock, ArrowRight, AlertCircle } from 'lucide-react';
+import { loginAction, demoLoginAction } from '@/app/actions/auth';
+import { Sparkles, User, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 
-export function LoginForm() {
+interface LoginFormProps {
+  demoMode: boolean;
+}
+
+export function LoginForm({ demoMode }: LoginFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -14,6 +18,18 @@ export function LoginForm() {
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
       const res = await loginAction(formData);
+      if (res?.error) {
+        setError(res.error);
+      }
+    });
+  };
+
+  const handleDemoClick = (
+    target: 'admin' | 'teacher_approved' | 'teacher_pending' | 'student'
+  ) => {
+    setError(null);
+    startTransition(async () => {
+      const res = await demoLoginAction(target);
       if (res?.error) {
         setError(res.error);
       }
@@ -90,6 +106,81 @@ export function LoginForm() {
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </form>
+
+          {demoMode && (
+            <div className="pt-5 border-t border-slate-100 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Demo accounts
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Click a role to sign in instantly (password:{' '}
+                <code className="font-mono text-slate-500">password123</code>).
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleDemoClick('admin')}
+                  className="p-2.5 rounded-xl border border-purple-200 bg-purple-50/50 hover:bg-purple-100 text-left transition disabled:opacity-60"
+                >
+                  <div className="text-xs font-bold text-purple-900">👑 Admin</div>
+                  <div className="text-[10px] text-purple-700 font-medium truncate">
+                    Principal Vance
+                  </div>
+                  <div className="text-[10px] text-purple-500 font-mono truncate">admin</div>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleDemoClick('teacher_approved')}
+                  className="p-2.5 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-100 text-left transition disabled:opacity-60"
+                >
+                  <div className="text-xs font-bold text-blue-900">👩‍🏫 Teacher</div>
+                  <div className="text-[10px] text-blue-700 font-medium truncate">
+                    Ms. Connor (Approved)
+                  </div>
+                  <div className="text-[10px] text-blue-500 font-mono truncate">
+                    teacher_sarah
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleDemoClick('teacher_pending')}
+                  className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/50 hover:bg-amber-100 text-left transition disabled:opacity-60"
+                >
+                  <div className="text-xs font-bold text-amber-900">⏳ Teacher</div>
+                  <div className="text-[10px] text-amber-700 font-medium truncate">
+                    Mr. Keating (Pending)
+                  </div>
+                  <div className="text-[10px] text-amber-500 font-mono truncate">
+                    teacher_john
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => handleDemoClick('student')}
+                  className="p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100 text-left transition disabled:opacity-60"
+                >
+                  <div className="text-xs font-bold text-emerald-900">🎒 Student</div>
+                  <div className="text-[10px] text-emerald-700 font-medium truncate">
+                    Alice Walker (5A)
+                  </div>
+                  <div className="text-[10px] text-emerald-500 font-mono truncate">
+                    student_alice
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <p className="text-center text-[11px] text-slate-400 mt-4">

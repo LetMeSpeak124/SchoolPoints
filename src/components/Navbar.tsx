@@ -1,11 +1,12 @@
 'use client';
 
-import { useTransition } from 'react';
-import { logoutAction } from '@/app/actions/auth';
+import { useState, useTransition } from 'react';
+import { logoutAction, demoLoginAction } from '@/app/actions/auth';
 import { Role } from '@/lib/types';
-import { LogOut } from 'lucide-react';
+import { LogOut, UserCheck } from 'lucide-react';
 
 interface NavbarProps {
+  demoMode?: boolean;
   user: {
     userId: string;
     username: string;
@@ -14,8 +15,9 @@ interface NavbarProps {
   };
 }
 
-export function Navbar({ user }: NavbarProps) {
+export function Navbar({ user, demoMode = false }: NavbarProps) {
   const [isPending, startTransition] = useTransition();
+  const [demoPending, setDemoPending] = useState(false);
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -23,6 +25,19 @@ export function Navbar({ user }: NavbarProps) {
     });
   };
 
+
+  const handleDemoSwitch = async (
+    target: 'admin' | 'teacher_approved' | 'teacher_pending' | 'student'
+  ) => {
+    setDemoPending(true);
+    try {
+      await demoLoginAction(target);
+    } catch {
+      // Redirects from server actions surface as exceptions in the client.
+    } finally {
+      setDemoPending(false);
+    }
+  };
 
   const roleColors: Record<Role, string> = {
     ADMIN: 'bg-purple-100 text-purple-800 border-purple-200',
@@ -61,6 +76,62 @@ export function Navbar({ user }: NavbarProps) {
             </span>
           </div>
 
+
+          {demoMode && (
+            <div className="hidden xl:flex items-center gap-1.5 pl-3 border-l border-slate-200">
+              <span className="text-xs text-slate-400 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5" /> Switch:
+              </span>
+              <button
+                type="button"
+                disabled={demoPending}
+                onClick={() => handleDemoSwitch('admin')}
+                className={`text-xs px-2 py-1 rounded border transition disabled:opacity-60 ${
+                  user.role === 'ADMIN'
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                Admin
+              </button>
+              <button
+                type="button"
+                disabled={demoPending}
+                onClick={() => handleDemoSwitch('teacher_approved')}
+                className={`text-xs px-2 py-1 rounded border transition disabled:opacity-60 ${
+                  user.username === 'teacher_sarah'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                Teacher
+              </button>
+              <button
+                type="button"
+                disabled={demoPending}
+                onClick={() => handleDemoSwitch('teacher_pending')}
+                className={`text-xs px-2 py-1 rounded border transition disabled:opacity-60 ${
+                  user.username === 'teacher_john'
+                    ? 'bg-amber-500 text-white border-amber-500'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                Pending
+              </button>
+              <button
+                type="button"
+                disabled={demoPending}
+                onClick={() => handleDemoSwitch('student')}
+                className={`text-xs px-2 py-1 rounded border transition disabled:opacity-60 ${
+                  user.role === 'STUDENT'
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                Student
+              </button>
+            </div>
+          )}
 
           {/* Logout button */}
           <button

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getStudentData, expireOverdueRedemptions, getManilaDayRange } from '@/lib/services/points';
+import { isDemoModeEnabled } from '@/lib/demo';
 import { Navbar } from '@/components/Navbar';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { TeacherDashboard } from '@/components/TeacherDashboard';
@@ -12,6 +13,8 @@ export default async function DashboardPage() {
   if (!session) {
     redirect('/login');
   }
+
+  const isDemoMode = isDemoModeEnabled();
 
   // Lazily expire overdue requests even if no external scheduler is configured.
   await expireOverdueRedemptions();
@@ -86,7 +89,7 @@ export default async function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navbar user={session} />
+        <Navbar user={session} demoMode={isDemoMode} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <AdminDashboard
             teachers={teachers as any}
@@ -166,7 +169,7 @@ export default async function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navbar user={session} />
+        <Navbar user={session} demoMode={isDemoMode} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <TeacherDashboard
             teacher={{
@@ -194,7 +197,7 @@ export default async function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-50">
-        <Navbar user={session} />
+        <Navbar user={session} demoMode={isDemoMode} />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <StudentDashboard
             student={data.student}
